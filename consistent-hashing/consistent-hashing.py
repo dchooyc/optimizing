@@ -25,9 +25,13 @@ class ConsistentHashing:
     
     def displayServersUsage(self):
         print("\n--- Current servers usage ---")
+        total = 0
 
         for server in self.servers:
+            total += len(server.data)
             print("Data usage of " + server.id + ": " + str(len(server.data)))
+        
+        print("\nTotal data usage: " + str(total))
 
 
     def addServers(self, serverIds):
@@ -40,9 +44,13 @@ class ConsistentHashing:
         self.servers.append(newServer)
 
         for v in range(1, self.virtuals + 1):
-            virtualId = serverId + "." + str(v)
-            hashed = hash(virtualId)
-            assignedValue = hashed % 360
+            extra = "." + str(v)
+            assignedValue = self.getAssignedValue(serverId, extra)
+
+            while assignedValue in self.assignedToServer:
+                extra += "." + str(v)
+                assignedValue = self.getAssignedValue(serverId, extra)
+
             self.assignedValues.append(assignedValue)
             self.assignedToServer[assignedValue] = len(self.servers) - 1
 
@@ -52,6 +60,57 @@ class ConsistentHashing:
                 self.addDataToServer(self.servers[len(self.servers) - 1], migrationData)        
         
         self.assignedValues.sort()
+
+
+    def getAssignedValue(self, serverId, extra):
+        virtualId = serverId + extra
+        hashed = hash(virtualId)
+        assignedValue = hashed % 360
+
+        return assignedValue
+
+
+    def scaleDown(self, count):
+        for _ in range(count):
+            if len(self.servers) == 3:
+                print("Minimum number of servers is 3, no further scaledown allowed!!")
+                break
+            self.removeServer()
+
+
+    def removeServer(self):
+        server = self.servers.pop()
+        serverIndex = len(self.servers)
+        data = server.data
+
+        removedAssignedValues = []
+
+        for key in self.assignedToServer:
+            if self.assignedToServer[key] == serverIndex:
+                removedAssignedValues.append(key)
+        
+        for key in removedAssignedValues:
+            del self.assignedToServer[key]
+            index = self.findAssignedValue(key)
+            self.assignedValues.pop(index)
+        
+        self.addDataToServers(data)
+
+
+    def findAssignedValue(self, value):
+        lo, hi = 0, len(self.assignedValues) - 1
+
+        while lo < hi:
+            mid = lo + ((hi - lo) >> 1)
+
+            if self.assignedValues[mid] == value:
+                return mid
+            elif self.assignedValues[mid] < value:
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        
+        return lo
         
 
     def findServer(self, value):
@@ -125,11 +184,17 @@ class TestData:
             "papaya", "watermelon", "cantaloupe", "peach", "nectarine",
             "plum", "apricot", "cherimoya", "pomegranate", "coconut"
         ]
+        markets = [
+            "LBQ", "PPM", "TOM", "CRM", "MDA",
+            "BRM", "MSM", "MCF", "KAW", "SLM",
+            "FPM", "RLM", "MCS", "MDL", "CTM",
+            "QVM", "MLM", "CMA", "MDA", "OSH",
+        ]
 
         data = {}
 
         for _ in range(count):
-            data["Fruit" + "-" + str(randint(100_000,999_999))] = colors[randint(0,9)] + "-" + fruits[randint(0,19)]
+            data[markets[randint(0,19)] + "-" + str(randint(100_000,999_999))] = colors[randint(0,9)] + "-" + fruits[randint(0,19)]
         
         return data
 
@@ -154,6 +219,10 @@ def main():
     consistent_hashing.displayServersUsage()
     newServers2 = td.genServers(6)
     consistent_hashing.addServers(newServers2)
+    consistent_hashing.displayServersUsage()
+    consistent_hashing.scaleDown(3)
+    consistent_hashing.displayServersUsage()
+    consistent_hashing.scaleDown(10)
     consistent_hashing.displayServersUsage()
     
     return
