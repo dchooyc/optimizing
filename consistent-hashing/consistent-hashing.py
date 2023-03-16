@@ -8,8 +8,11 @@ class Server:
 
 
 class ConsistentHashing:
-    def __init__(self, virtuals = 3):
+    # can set range of possible values with mod
+    # can set number of virtual servers per server
+    def __init__(self, mod = 3600, virtuals = 3):
         self.servers = []
+        self.mod = mod
         self.virtuals = virtuals
         self.assignedValues = []
         self.assignedToServer = {}
@@ -47,6 +50,7 @@ class ConsistentHashing:
             extra = "." + str(v)
             assignedValue = self.getAssignedValue(serverId, extra)
 
+            # this prevents duplicate assignedValues
             while assignedValue in self.assignedToServer:
                 extra += "." + str(v)
                 assignedValue = self.getAssignedValue(serverId, extra)
@@ -54,6 +58,7 @@ class ConsistentHashing:
             self.assignedValues.append(assignedValue)
             self.assignedToServer[assignedValue] = len(self.servers) - 1
 
+            # if there are servers, try to retrieve data from predecessor
             if len(self.servers) > 0:
                 predecessor = self.findServer(assignedValue)
                 migrationData = self.getMigrationData(self.servers[predecessor], assignedValue)
@@ -65,7 +70,7 @@ class ConsistentHashing:
     def getAssignedValue(self, serverId, extra):
         virtualId = serverId + extra
         hashed = hash(virtualId)
-        assignedValue = hashed % 360
+        assignedValue = hashed % self.mod
 
         return assignedValue
 
@@ -94,9 +99,11 @@ class ConsistentHashing:
             index = self.findAssignedValue(key)
             self.assignedValues.pop(index)
         
+        # repopulate data to the other servers
         self.addDataToServers(data)
 
 
+    # finds index of assigned value
     def findAssignedValue(self, value):
         lo, hi = 0, len(self.assignedValues) - 1
 
@@ -113,6 +120,7 @@ class ConsistentHashing:
         return lo
         
 
+    # finds index of server object that value should be assigned to
     def findServer(self, value):
         lo, hi = 0, len(self.assignedValues)
 
@@ -124,17 +132,19 @@ class ConsistentHashing:
             else:
                 hi = mid
         
+        # ensures circular assignment
         assignedValue = self.assignedValues[lo % len(self.assignedValues)]
         
         return self.assignedToServer[assignedValue]
     
 
+    # retrieves data to be migrated to successor
     def getMigrationData(self, server, target):
         mig, removedKeys = {}, []
 
         for key in server.data:
             hashed = hash(key)
-            assignedValue = hashed % 360
+            assignedValue = hashed % self.mod
 
             if assignedValue < target:
                 mig[key] = server.data[key]
@@ -149,7 +159,7 @@ class ConsistentHashing:
     def addDataToServers(self, data):
         for key in data:
             hashed = hash(key)
-            assignedValue = hashed % 360
+            assignedValue = hashed % self.mod
             targetServer = self.findServer(assignedValue)
             self.addDataToServer(self.servers[targetServer], { key: data[key]})
     
@@ -161,6 +171,7 @@ class ConsistentHashing:
 
 
 class TestData:
+    # randomly generate server ids
     def genServers(self, count):
         direction = ["North", "South", "East", "West"]
         countries = ["Singapore", "Australia", "France", "Canada", "China", "Chile", "Nepal", "Uruguay", "Cameroon"]
@@ -173,6 +184,7 @@ class TestData:
         return servers
     
 
+    # randomly generate data key value pairs
     def genData(self, count):
         colors = [
             "red", "blue", "green", "yellow", "orange",
@@ -184,6 +196,7 @@ class TestData:
             "papaya", "watermelon", "cantaloupe", "peach", "nectarine",
             "plum", "apricot", "cherimoya", "pomegranate", "coconut"
         ]
+        # abbreviations of famous fruit markets
         markets = [
             "LBQ", "PPM", "TOM", "CRM", "MDA",
             "BRM", "MSM", "MCF", "KAW", "SLM",
@@ -207,21 +220,42 @@ def main():
     consistent_hashing.addServers(servers)
     data = td.genData(10)
     consistent_hashing.addDataToServers(data)
+
+
+    # displays servers contents at first creation
     consistent_hashing.displayServers()
+
+
+    # demonstrates data redistribution when adding new servers
     newServers = td.genServers(3)
     consistent_hashing.addServers(newServers)
     consistent_hashing.displayServers()
+
+
+    # demonstrates new data is succesfully distributed to servers
     newData = td.genData(50)
     consistent_hashing.addDataToServers(newData)
     consistent_hashing.displayServers()
+
+
+    # in general, when larger data sets are used, data distribution is rather even
     newData2 = td.genData(100_000)
     consistent_hashing.addDataToServers(newData2)
     consistent_hashing.displayServersUsage()
+
+
+    # shows data is redistributed rather evenly during scale up
     newServers2 = td.genServers(6)
     consistent_hashing.addServers(newServers2)
     consistent_hashing.displayServersUsage()
+
+
+    # shows scaledown and redistribution of data
     consistent_hashing.scaleDown(3)
     consistent_hashing.displayServersUsage()
+
+
+    # shows scaledown stopping mechanism
     consistent_hashing.scaleDown(10)
     consistent_hashing.displayServersUsage()
     
